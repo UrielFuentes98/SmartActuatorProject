@@ -146,6 +146,7 @@ int main(void)
   MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_GPIO_WritePin(LEDInt_GPIO_Port, LEDInt_Pin, GPIO_PIN_SET);
   /*HAL_CAN_Start(&hcan);
   txHeader.DLC = 8;
   txHeader.StdId = 0x65D;
@@ -501,6 +502,9 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, In1_Pin|In2_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : LEDInt_Pin */
   GPIO_InitStruct.Pin = LEDInt_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -514,6 +518,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LED2_Pin */
+  GPIO_InitStruct.Pin = LED2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LED2_GPIO_Port, &GPIO_InitStruct);
 
 }
 

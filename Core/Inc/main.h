@@ -72,6 +72,8 @@ void Error_Handler(void);
 #define In2_GPIO_Port GPIOA
 #define PWM_Mot_Pin GPIO_PIN_6
 #define PWM_Mot_GPIO_Port GPIOA
+#define LED2_Pin GPIO_PIN_0
+#define LED2_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */
