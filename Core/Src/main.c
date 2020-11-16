@@ -33,6 +33,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+# define POINTS_NUM 7
+# define DIST_POINTS 7
+# define HALF_OFFSET 3
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -81,6 +84,8 @@ const osThreadAttr_t PositionControl_attributes = {
 /* USER CODE BEGIN PV */
 
 uint32_t adcRaw = 0;
+const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
+const uint32_t linearFactors[7] = {15, 120, 137, 140, 93, 15, 10};
 /*CAN_TxHeaderTypeDef txHeader;
 uint8_t txMessage[8] = {'J', '.', ' ', 'D', 'E', 'E', 'R', 'E'};
 uint32_t txMailbox;
@@ -104,6 +109,7 @@ void Pos_Control(void *argument);
 
 /* USER CODE BEGIN PFP */
 uint32_t readRawADC (ADC_HandleTypeDef hadc);
+uint32_t getPos_mm (uint32_t adcVal);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -541,6 +547,31 @@ uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 	return reading;
 
 }
+
+uint32_t getPos_mm (uint32_t adcVal) {
+
+	uint32_t sector = 0;
+	uint32_t pos_mm = 0;
+
+	while (adcVal >= adcPoints[sector] && sector < POINTS_NUM){
+		sector ++;
+	}
+
+	pos_mm += DIST_POINTS * sector;
+	if (pos_mm >= 3){
+		pos_mm += HALF_OFFSET;
+	}
+
+	if (sector > 0){
+		pos_mm += (adcPoints[sector] - adcVal) / linearFactors[sector - 1];
+	} else{
+		pos_mm += adcVal * 1.4;
+	}
+
+	return pos_mm;
+
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_CAN_Read_Pos */
