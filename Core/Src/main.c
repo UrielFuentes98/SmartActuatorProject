@@ -84,6 +84,7 @@ const osThreadAttr_t PositionControl_attributes = {
 /* USER CODE BEGIN PV */
 
 uint32_t adcRaw = 0;
+uint32_t actualPos_mm = 0;
 const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
 const uint32_t linearFactors[7] = {15, 120, 137, 140, 93, 15, 10};
 /*CAN_TxHeaderTypeDef txHeader;
@@ -550,7 +551,7 @@ uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 
 uint32_t getPos_mm (uint32_t adcVal) {
 
-	uint32_t sector = 0;
+	uint8_t sector = 0;
 	uint32_t pos_mm = 0;
 
 	while (adcVal >= adcPoints[sector] && sector < POINTS_NUM){
@@ -563,7 +564,7 @@ uint32_t getPos_mm (uint32_t adcVal) {
 	}
 
 	if (sector > 0){
-		pos_mm += (adcPoints[sector] - adcVal) / linearFactors[sector - 1];
+		pos_mm += (adcVal - adcPoints[sector - 1]) / linearFactors[sector - 1];
 	} else{
 		pos_mm += adcVal * 1.4;
 	}
@@ -642,6 +643,7 @@ void Pos_Control(void *argument)
   for(;;)
   {
 	adcRaw = readRawADC(hadc2);
+	actualPos_mm = getPos_mm(adcRaw);
     osDelay(20);
   }
   /* USER CODE END Pos_Control */
