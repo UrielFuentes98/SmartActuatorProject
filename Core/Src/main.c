@@ -111,6 +111,7 @@ void Pos_Control(void *argument);
 /* USER CODE BEGIN PFP */
 uint32_t readRawADC (ADC_HandleTypeDef hadc);
 uint32_t getPos_mm (uint32_t adcVal);
+static void setPWM(TIM_HandleTypeDef, uint32_t, uint16_t, uint16_t);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -536,6 +537,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void setPWM(TIM_HandleTypeDef timer, uint32_t channel, uint16_t period,
+uint16_t pulse)
+{
+ HAL_TIM_PWM_Stop(&timer, channel); // stop generation of pwm
+ TIM_OC_InitTypeDef sConfigOC;
+ timer.Init.Period = period; // set the period duration
+ HAL_TIM_PWM_Init(&timer); // reinititialise with new period value
+ sConfigOC.OCMode = TIM_OCMODE_PWM1;
+ sConfigOC.Pulse = pulse; // set the pulse duration
+ sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+ sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+ HAL_TIM_PWM_ConfigChannel(&timer, &sConfigOC, channel);
+ HAL_TIM_PWM_Start(&timer, channel); // start pwm generation
+}
+
 uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 
 	uint32_t reading;
@@ -644,6 +660,7 @@ void Pos_Control(void *argument)
   {
 	adcRaw = readRawADC(hadc2);
 	actualPos_mm = getPos_mm(adcRaw);
+	setPWM(htim3, TIM_CHANNEL_1, 1000, 1000);
     osDelay(20);
   }
   /* USER CODE END Pos_Control */
