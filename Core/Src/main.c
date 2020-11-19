@@ -36,6 +36,9 @@
 # define POINTS_NUM 7
 # define DIST_POINTS 7
 # define HALF_OFFSET 3
+# define COUNTS_PER_CONTROL 200
+# define PULSE_MAX 1000
+# define PERIOD_COUNT 1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -85,6 +88,9 @@ const osThreadAttr_t PositionControl_attributes = {
 
 uint32_t adcRaw = 0;
 uint32_t actualPos_mm = 0;
+uint32_t setPoint = 35;
+int32_t error = 0;
+uint32_t pulseCount = 0;
 const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
 const uint32_t linearFactors[7] = {15, 120, 137, 140, 93, 15, 10};
 /*CAN_TxHeaderTypeDef txHeader;
@@ -112,6 +118,8 @@ void Pos_Control(void *argument);
 uint32_t readRawADC (ADC_HandleTypeDef hadc);
 uint32_t getPos_mm (uint32_t adcVal);
 static void setPWM(TIM_HandleTypeDef, uint32_t, uint16_t, uint16_t);
+void MotForward (void);
+void MotBackward (void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -589,6 +597,16 @@ uint32_t getPos_mm (uint32_t adcVal) {
 
 }
 
+void MotForward (void){
+	HAL_GPIO_WritePin(GPIOA, In1_Pin, GPIO_PIN_RESET);
+	HAL_GPIO_WritePin(GPIOA, In2_Pin, GPIO_PIN_SET);
+}
+
+void MotBackward (void){
+	HAL_GPIO_WritePin(GPIOA, In1_Pin, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOA, In2_Pin, GPIO_PIN_RESET);
+}
+
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_CAN_Read_Pos */
@@ -660,7 +678,33 @@ void Pos_Control(void *argument)
   {
 	adcRaw = readRawADC(hadc2);
 	actualPos_mm = getPos_mm(adcRaw);
-	setPWM(htim3, TIM_CHANNEL_1, 1000, 1000);
+	error = setPoint - actualPos_mm;
+
+	if (error >= 0) {
+		MotForward();
+	}else {
+		MotBackward();
+	}
+
+	if (error < 0){
+		error = error * -1;
+	}
+
+	if (error >= 5){
+		pulseCount = PULSE_MAX;
+	}else{
+		pulseCount = COUNTS_PER_CONTROL * error;
+	}
+
+	setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
+
+	if (error == 0){
+		if (setPoint == 35){
+			setPoint = 25;
+		}else{
+			setPoint = 35;
+		}
+	}
     osDelay(20);
   }
   /* USER CODE END Pos_Control */
