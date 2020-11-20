@@ -36,9 +36,14 @@
 # define POINTS_NUM 7
 # define DIST_POINTS 7
 # define HALF_OFFSET 3
+
 # define COUNTS_PER_CONTROL 200
 # define PULSE_MAX 1000
 # define PERIOD_COUNT 1000
+# define PULSE_FAILURE 0
+
+#define ADC_VOL_NORMAL 2300
+#define ADC_DIF_LIMIT 880
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -86,7 +91,10 @@ const osThreadAttr_t PositionControl_attributes = {
 };
 /* USER CODE BEGIN PV */
 
-uint32_t adcRaw = 0;
+enum SysStates{FAILURE, NORMAL}SysState;
+
+uint32_t adcRawPot = 0;
+uint32_t adcRawBat = 0;
 uint32_t actualPos_mm = 0;
 uint32_t setPoint = 35;
 int32_t error = 0;
@@ -163,6 +171,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   HAL_GPIO_WritePin(LEDInt_GPIO_Port, LEDInt_Pin, GPIO_PIN_SET);
+  SysState = NORMAL;
   /*HAL_CAN_Start(&hcan);
   txHeader.DLC = 8;
   txHeader.StdId = 0x65D;
@@ -658,7 +667,14 @@ void Check_Failures(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  adcRawBat = readRawADC(hadc1);
+
+	  //Check for voltage read outside of valid limits.
+	  if (adcRawBat < ADC_VOL_NORMAL - ADC_DIF_LIMIT || adcRawBat > ADC_VOL_NORMAL + ADC_DIF_LIMIT) {
+		  SysState = FAILURE;
+	  }
+
+	  osDelay(1000);
   }
   /* USER CODE END Check_Failures */
 }
@@ -676,27 +692,38 @@ void Pos_Control(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	adcRaw = readRawADC(hadc2);
-	actualPos_mm = getPos_mm(adcRaw);
+
+	//Read position and calculate error.
+	adcRawPot = readRawADC(hadc2);
+	actualPos_mm = getPos_mm(adcRawPot);
 	error = setPoint - actualPos_mm;
 
+	//Set movement direction
 	if (error >= 0) {
 		MotForward();
 	}else {
 		MotBackward();
 	}
 
+	//Get absolute value of error
 	if (error < 0){
 		error = error * -1;
 	}
 
+	//Calculate PWM output with control algorithm.
 	if (error >= 5){
 		pulseCount = PULSE_MAX;
 	}else{
 		pulseCount = COUNTS_PER_CONTROL * error;
 	}
 
-	setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
+	//Check for system failures.
+	if (SysState == NORMAL) {
+		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
+
+	} else if (SysState == FAILURE) {
+		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, PULSE_FAILURE);
+	}
 
 	if (error == 0){
 		if (setPoint == 35){
@@ -705,6 +732,7 @@ void Pos_Control(void *argument)
 			setPoint = 35;
 		}
 	}
+
     osDelay(20);
   }
   /* USER CODE END Pos_Control */
