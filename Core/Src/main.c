@@ -36,14 +36,9 @@
 # define POINTS_NUM 7
 # define DIST_POINTS 7
 # define HALF_OFFSET 3
-
 # define COUNTS_PER_CONTROL 200
 # define PULSE_MAX 1000
 # define PERIOD_COUNT 1000
-# define PULSE_FAILURE 0
-
-#define ADC_VOL_NORMAL 2300
-#define ADC_DIF_LIMIT 880
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -60,6 +55,7 @@ CAN_HandleTypeDef hcan;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart3;
 
 /* Definitions for CANReadPos */
 osThreadId_t CANReadPosHandle;
@@ -91,22 +87,22 @@ const osThreadAttr_t PositionControl_attributes = {
 };
 /* USER CODE BEGIN PV */
 
-enum SysStates{FAILURE, NORMAL}SysState;
-
-uint32_t adcRawPot = 0;
-uint32_t adcRawBat = 0;
-uint32_t actualPos_mm = 0;
-uint32_t setPoint = 35;
+uint32_t adcRaw = 0;
+uint16_t actualPos_mm = 0;
+uint32_t setPoint = 15;
 int32_t error = 0;
 uint32_t pulseCount = 0;
 const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
 const uint32_t linearFactors[7] = {15, 120, 137, 140, 93, 15, 10};
-/*CAN_TxHeaderTypeDef txHeader;
-uint8_t txMessage[8] = {'J', '.', ' ', 'D', 'E', 'E', 'R', 'E'};
+CAN_TxHeaderTypeDef txHeader;
+uint8_t txMessage[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 uint32_t txMailbox;
 CAN_RxHeaderTypeDef rxHeader;
 uint8_t rxMessage[8];
-CAN_FilterTypeDef filterConfig;*/
+CAN_FilterTypeDef filterConfig;
+uint8_t buff[1];
+uint8_t readSP = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -117,6 +113,7 @@ static void MX_CAN_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_ADC2_Init(void);
+static void MX_USART3_UART_Init(void);
 void CAN_Read_Pos(void *argument);
 void CAN_Read_SP(void *argument);
 void Check_Failures(void *argument);
@@ -168,13 +165,14 @@ int main(void)
   MX_TIM3_Init();
   MX_USART1_UART_Init();
   MX_ADC2_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_GPIO_WritePin(LEDInt_GPIO_Port, LEDInt_Pin, GPIO_PIN_SET);
-  SysState = NORMAL;
-  /*HAL_CAN_Start(&hcan);
+
+
   txHeader.DLC = 8;
-  txHeader.StdId = 0x65D;
+  txHeader.StdId = 0x18FFF848;
   txHeader.IDE = CAN_ID_STD;
   txHeader.RTR = CAN_RTR_DATA;
   filterConfig.FilterIdHigh = 0;
@@ -186,7 +184,8 @@ int main(void)
   filterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
   filterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
   filterConfig.FilterActivation = ENABLE;
-  HAL_CAN_ConfigFilter(&hcan, &filterConfig);*/
+  HAL_CAN_Start(&hcan);
+  HAL_CAN_ConfigFilter(&hcan, &filterConfig);
 
   /* USER CODE END 2 */
 
@@ -235,6 +234,8 @@ int main(void)
   while (1)
   {
 
+
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -257,11 +258,11 @@ void SystemClock_Config(void)
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV2;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL13;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -280,7 +281,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV4;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -393,10 +394,10 @@ static void MX_CAN_Init(void)
 
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN1;
-  hcan.Init.Prescaler = 4;
+  hcan.Init.Prescaler = 24;
   hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
-  hcan.Init.TimeSeg1 = CAN_BS1_11TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_1TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_1TQ;
   hcan.Init.TimeTriggeredMode = DISABLE;
   hcan.Init.AutoBusOff = DISABLE;
@@ -507,6 +508,39 @@ static void MX_USART1_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 9600;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -585,7 +619,7 @@ uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 uint32_t getPos_mm (uint32_t adcVal) {
 
 	uint8_t sector = 0;
-	uint32_t pos_mm = 0;
+	uint16_t pos_mm = 0;
 
 	while (adcVal >= adcPoints[sector] && sector < POINTS_NUM){
 		sector ++;
@@ -629,9 +663,25 @@ void CAN_Read_Pos(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
+	//uint8_t MSG[25] = {'\0'};
+	//uint8_t X = 0;
   for(;;)
   {
-    osDelay(1);
+	adcRaw = readRawADC(hadc2);
+	actualPos_mm = getPos_mm(adcRaw);
+	txHeader.StdId = 0x18F03248;
+	txMessage[0]= actualPos_mm & 0xff;
+	txMessage[1]=(actualPos_mm >> 8);
+	HAL_CAN_AddTxMessage(&hcan, &txHeader, txMessage, &txMailbox);
+
+	HAL_UART_Receive( &huart3, buff, 1, 200);
+	setPoint = buff[0];
+    /*sprintf(MSG, "Hello Dudes! Tracing X = %d\r\n", X);
+    HAL_UART_Transmit(&huart1, MSG, sizeof(MSG), 100);
+    HAL_Delay(500);
+    X++;*/
+
+    osDelay(20);
   }
   /* USER CODE END 5 */
 }
@@ -646,10 +696,15 @@ void CAN_Read_Pos(void *argument)
 void CAN_Read_SP(void *argument)
 {
   /* USER CODE BEGIN CAN_Read_SP */
+
   /* Infinite loop */
 	for(;;)
 	{
-		osDelay(20);
+		//HAL_UART_Receive( &huart3, buff, 1, 200);
+		//txHeader.StdId = 0x18FFF848;
+		//HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &rxHeader, rxMessage);
+		//setPoint = buff[0];
+		osDelay(1000);
 	}
   /* USER CODE END CAN_Read_SP */
 }
@@ -667,13 +722,10 @@ void Check_Failures(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  adcRawBat = readRawADC(hadc1);
-
-	  //Check for voltage read outside of valid limits.
-	  if (adcRawBat < ADC_VOL_NORMAL - ADC_DIF_LIMIT || adcRawBat > ADC_VOL_NORMAL + ADC_DIF_LIMIT) {
-		  SysState = FAILURE;
+	  HAL_UART_Receive( &huart3, buff, 1, 200);
+	  if(buff[0] != 0) {
+	  setPoint = buff[0];
 	  }
-
 	  osDelay(1000);
   }
   /* USER CODE END Check_Failures */
@@ -692,46 +744,27 @@ void Pos_Control(void *argument)
   /* Infinite loop */
   for(;;)
   {
-
-	//Read position and calculate error.
-	adcRawPot = readRawADC(hadc2);
-	actualPos_mm = getPos_mm(adcRawPot);
+	adcRaw = readRawADC(hadc2);
+	actualPos_mm = getPos_mm(adcRaw);
 	error = setPoint - actualPos_mm;
 
-	//Set movement direction
 	if (error >= 0) {
 		MotForward();
 	}else {
 		MotBackward();
 	}
 
-	//Get absolute value of error
 	if (error < 0){
 		error = error * -1;
 	}
 
-	//Calculate PWM output with control algorithm.
 	if (error >= 5){
 		pulseCount = PULSE_MAX;
 	}else{
 		pulseCount = COUNTS_PER_CONTROL * error;
 	}
 
-	//Check for system failures.
-	if (SysState == NORMAL) {
-		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
-
-	} else if (SysState == FAILURE) {
-		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, PULSE_FAILURE);
-	}
-
-	if (error == 0){
-		if (setPoint == 35){
-			setPoint = 25;
-		}else{
-			setPoint = 35;
-		}
-	}
+	setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
 
     osDelay(20);
   }
