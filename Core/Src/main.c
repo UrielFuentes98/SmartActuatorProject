@@ -50,6 +50,8 @@
 #define ADC_CURR_NORMAL 2420
 #define ADC_DIF_CURR_LIMIT 360
 
+#define HOME_POS 30
+#define COUNTS_HOME 25
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -104,7 +106,7 @@ uint32_t adcRaw = 0;
 uint32_t adcRawVol = 0;
 uint32_t adcRawCurr = 0;
 uint16_t actualPos_mm = 0;
-uint32_t setPoint = 30;
+uint32_t setPoint = HOME_POS;
 int32_t error = 0;
 uint32_t pulseCount = 0;
 const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
@@ -118,6 +120,7 @@ CAN_FilterTypeDef filterConfig;
 uint8_t InBuff[1];
 uint8_t sendBuff[2];
 uint8_t readSP = 0;
+uint32_t countsHome = 0;
 
 /* USER CODE END PV */
 
@@ -705,21 +708,15 @@ void CAN_Read_Pos(void *argument)
 	//uint8_t X = 0;
   for(;;)
   {
-	adcRaw = readRawADC(hadc2);
+
+	/*adcRaw = readRawADC(hadc2);
 	actualPos_mm = getPos_mm(adcRaw);
 	txHeader.StdId = 0x18F03248;
 	txMessage[0]= actualPos_mm & 0xff;
 	txMessage[1]=(actualPos_mm >> 8);
-	HAL_CAN_AddTxMessage(&hcan, &txHeader, txMessage, &txMailbox);
+	HAL_CAN_AddTxMessage(&hcan, &txHeader, txMessage, &txMailbox);*/
 
-	//HAL_UART_Receive( &huart3, buff, 1, 200);
-	//setPoint = buff[0];
-    /*sprintf(MSG, "Hello Dudes! Tracing X = %d\r\n", X);
-    HAL_UART_Transmit(&huart1, MSG, sizeof(MSG), 100);
-    HAL_Delay(500);
-    X++;*/
-
-    osDelay(20);
+    osDelay(1000);
   }
   /* USER CODE END 5 */
 }
@@ -780,6 +777,7 @@ void Check_Failures(void *argument)
 	  HAL_ADC_Start(&hadc1);
 	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
 	  adcRawVol = HAL_ADC_GetValue(&hadc1);
+	  osDelay(5);
 	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
 	  adcRawCurr = HAL_ADC_GetValue(&hadc1);
 	  HAL_ADC_Stop(&hadc1);
@@ -840,6 +838,16 @@ void Pos_Control(void *argument)
 		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
 	} else {
 		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, 0);
+	}
+
+	if (error <= 1) {
+		if (setPoint != HOME_POS) {
+			countsHome ++;
+			if (countsHome >= COUNTS_HOME) {
+				setPoint = HOME_POS;
+				countsHome = 0;
+			}
+		}
 	}
 
 	sendSerialData();
