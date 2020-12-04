@@ -67,7 +67,6 @@ CAN_HandleTypeDef hcan;
 
 TIM_HandleTypeDef htim3;
 
-UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
 
 /* Definitions for CANReadPos */
@@ -130,7 +129,6 @@ static void MX_GPIO_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_CAN_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_ADC2_Init(void);
 static void MX_USART3_UART_Init(void);
 void CAN_Read_Pos(void *argument);
@@ -183,7 +181,6 @@ int main(void)
   MX_ADC1_Init();
   MX_CAN_Init();
   MX_TIM3_Init();
-  MX_USART1_UART_Init();
   MX_ADC2_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
@@ -504,39 +501,6 @@ static void MX_TIM3_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART1_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART1_Init 0 */
-
-  /* USER CODE END USART1_Init 0 */
-
-  /* USER CODE BEGIN USART1_Init 1 */
-
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 9600;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART1_Init 2 */
-
-  /* USER CODE END USART1_Init 2 */
-
-}
-
-/**
   * @brief USART3 Initialization Function
   * @param None
   * @retval None
@@ -647,6 +611,9 @@ uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 
 }
 
+
+//Function to transmit position and error data serially to Arduino
+
 void sendSerialData(void) {
 
 	sendBuff[0] = actualPos_mm;
@@ -656,19 +623,27 @@ void sendSerialData(void) {
 
 }
 
+// Function to calculate position in mm from a ADC read. A linearization process is used.
+
 uint32_t getPos_mm (uint32_t adcVal) {
 
 	uint8_t sector = 0;
 	uint16_t pos_mm = 0;
 
+	//Check in what sector the ADC reading is in.
+
 	while (adcVal >= adcPoints[sector] && sector < POINTS_NUM){
 		sector ++;
 	}
+
+	//Calculate base position.
 
 	pos_mm += DIST_POINTS * sector;
 	if (pos_mm >= 3){
 		pos_mm += HALF_OFFSET;
 	}
+
+	//Add offset position between segments limits.
 
 	if (sector > 0){
 		pos_mm += (adcVal - adcPoints[sector - 1]) / linearFactors[sector - 1];
@@ -680,11 +655,14 @@ uint32_t getPos_mm (uint32_t adcVal) {
 
 }
 
+// Set H bridge control lines to motor forward move.
 
 void MotForward (void){
 	HAL_GPIO_WritePin(GPIOA, In1_Pin, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOA, In2_Pin, GPIO_PIN_SET);
 }
+
+// Set H bridge control lines to motor backward move.
 
 void MotBackward (void){
 	HAL_GPIO_WritePin(GPIOA, In1_Pin, GPIO_PIN_SET);
@@ -704,18 +682,8 @@ void CAN_Read_Pos(void *argument)
 {
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
-	//uint8_t MSG[25] = {'\0'};
-	//uint8_t X = 0;
   for(;;)
   {
-
-	/*adcRaw = readRawADC(hadc2);
-	actualPos_mm = getPos_mm(adcRaw);
-	txHeader.StdId = 0x18F03248;
-	txMessage[0]= actualPos_mm & 0xff;
-	txMessage[1]=(actualPos_mm >> 8);
-	HAL_CAN_AddTxMessage(&hcan, &txHeader, txMessage, &txMailbox);*/
-
     osDelay(1000);
   }
   /* USER CODE END 5 */
@@ -735,10 +703,7 @@ void CAN_Read_SP(void *argument)
   /* Infinite loop */
 	for(;;)
 	{
-		//HAL_UART_Receive( &huart3, buff, 1, 200);
-		//txHeader.StdId = 0x18FFF848;
-		//HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &rxHeader, rxMessage);
-		//setPoint = buff[0];
+		//Check for serial incomming data and save it if valid.
 
 		if(HAL_UART_Receive (&huart3, InBuff, 1, 200) == HAL_OK) {
 
@@ -773,6 +738,8 @@ void Check_Failures(void *argument)
   /* Infinite loop */
   for(;;)
   {
+
+	  //Read voltage and current analog inputs
 
 	  HAL_ADC_Start(&hadc1);
 	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
@@ -813,10 +780,14 @@ void Pos_Control(void *argument)
   /* Infinite loop */
   for(;;)
   {
+	//Read position
+
 	adcRaw = readRawADC(hadc2);
 	actualPos_mm = getPos_mm(adcRaw);
 
 	error = setPoint - actualPos_mm;
+
+	//Determine direction
 
 	if (error >= 0) {
 		MotForward();
@@ -828,17 +799,23 @@ void Pos_Control(void *argument)
 		error = error * -1;
 	}
 
+	//Control algorithm for duty cycle generation
+
 	if (error >= 5){
 		pulseCount = PULSE_MAX;
 	}else{
 		pulseCount = COUNTS_PER_CONTROL * error;
 	}
 
+	//Check for failures
+
 	if (SysState == NORMAL) {
 		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
 	} else {
 		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, 0);
 	}
+
+	//Check for home return timeout
 
 	if (error <= 1) {
 		if (setPoint != HOME_POS) {
