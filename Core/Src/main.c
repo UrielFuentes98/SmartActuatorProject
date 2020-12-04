@@ -36,9 +36,20 @@
 # define POINTS_NUM 7
 # define DIST_POINTS 7
 # define HALF_OFFSET 3
+
 # define COUNTS_PER_CONTROL 200
 # define PULSE_MAX 1000
 # define PERIOD_COUNT 1000
+
+# define MAX_SP 55
+# define MIN_SP 2
+
+#define ADC_VOL_NORMAL 2420
+#define ADC_DIF_VOL_LIMIT 800
+
+#define ADC_CURR_NORMAL 2420
+#define ADC_DIF_CURR_LIMIT 360
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -87,9 +98,13 @@ const osThreadAttr_t PositionControl_attributes = {
 };
 /* USER CODE BEGIN PV */
 
+enum SysStates{VOL_ABOVE, VOL_BELOW, CURR_BELOW, CURR_ABOVE, NORMAL}SysState;
+
 uint32_t adcRaw = 0;
+uint32_t adcRawVol = 0;
+uint32_t adcRawCurr = 0;
 uint16_t actualPos_mm = 0;
-uint32_t setPoint = 15;
+uint32_t setPoint = 30;
 int32_t error = 0;
 uint32_t pulseCount = 0;
 const uint32_t adcPoints[7] = {5, 130, 969, 2070, 3190, 3845, 3965};
@@ -100,7 +115,8 @@ uint32_t txMailbox;
 CAN_RxHeaderTypeDef rxHeader;
 uint8_t rxMessage[8];
 CAN_FilterTypeDef filterConfig;
-uint8_t buff[1];
+uint8_t InBuff[1];
+uint8_t sendBuff[2];
 uint8_t readSP = 0;
 
 /* USER CODE END PV */
@@ -123,6 +139,7 @@ void Pos_Control(void *argument);
 uint32_t readRawADC (ADC_HandleTypeDef hadc);
 uint32_t getPos_mm (uint32_t adcVal);
 static void setPWM(TIM_HandleTypeDef, uint32_t, uint16_t, uint16_t);
+void sendSerialData(void);
 void MotForward (void);
 void MotBackward (void);
 /* USER CODE END PFP */
@@ -187,6 +204,7 @@ int main(void)
   HAL_CAN_Start(&hcan);
   HAL_CAN_ConfigFilter(&hcan, &filterConfig);
 
+  SysState = NORMAL;
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -308,12 +326,12 @@ static void MX_ADC1_Init(void)
   /** Common config
   */
   hadc1.Instance = ADC1;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = 2;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
     Error_Handler();
@@ -323,6 +341,14 @@ static void MX_ADC1_Init(void)
   sConfig.Channel = ADC_CHANNEL_2;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -588,6 +614,8 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+
 void setPWM(TIM_HandleTypeDef timer, uint32_t channel, uint16_t period,
 uint16_t pulse)
 {
@@ -616,6 +644,15 @@ uint32_t readRawADC (ADC_HandleTypeDef hadc) {
 
 }
 
+void sendSerialData(void) {
+
+	sendBuff[0] = actualPos_mm;
+	sendBuff[1] = SysState;
+
+	HAL_UART_Transmit (&huart3, sendBuff, 2, 200);
+
+}
+
 uint32_t getPos_mm (uint32_t adcVal) {
 
 	uint8_t sector = 0;
@@ -639,6 +676,7 @@ uint32_t getPos_mm (uint32_t adcVal) {
 	return pos_mm;
 
 }
+
 
 void MotForward (void){
 	HAL_GPIO_WritePin(GPIOA, In1_Pin, GPIO_PIN_RESET);
@@ -674,8 +712,8 @@ void CAN_Read_Pos(void *argument)
 	txMessage[1]=(actualPos_mm >> 8);
 	HAL_CAN_AddTxMessage(&hcan, &txHeader, txMessage, &txMailbox);
 
-	HAL_UART_Receive( &huart3, buff, 1, 200);
-	setPoint = buff[0];
+	//HAL_UART_Receive( &huart3, buff, 1, 200);
+	//setPoint = buff[0];
     /*sprintf(MSG, "Hello Dudes! Tracing X = %d\r\n", X);
     HAL_UART_Transmit(&huart1, MSG, sizeof(MSG), 100);
     HAL_Delay(500);
@@ -704,7 +742,23 @@ void CAN_Read_SP(void *argument)
 		//txHeader.StdId = 0x18FFF848;
 		//HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &rxHeader, rxMessage);
 		//setPoint = buff[0];
-		osDelay(1000);
+
+		if(HAL_UART_Receive (&huart3, InBuff, 1, 200) == HAL_OK) {
+
+			//Limit SetPoint range.
+			if (InBuff[0] > MAX_SP) {
+				setPoint = MAX_SP;
+			} else if (InBuff[0] < MIN_SP) {
+				setPoint = MIN_SP;
+			} else {
+				setPoint = InBuff[0];
+			}
+
+			osDelay(1000);
+
+		} else {
+			osDelay(200);
+		}
 	}
   /* USER CODE END CAN_Read_SP */
 }
@@ -722,10 +776,27 @@ void Check_Failures(void *argument)
   /* Infinite loop */
   for(;;)
   {
-	  HAL_UART_Receive( &huart3, buff, 1, 200);
-	  if(buff[0] != 0) {
-	  setPoint = buff[0];
+
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+	  adcRawVol = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
+	  adcRawCurr = HAL_ADC_GetValue(&hadc1);
+	  HAL_ADC_Stop(&hadc1);
+
+	  //Check for voltage read outside of valid limits.
+	  if (adcRawVol < ADC_VOL_NORMAL - ADC_DIF_VOL_LIMIT) {
+		  SysState = VOL_BELOW;
+	  } else if (adcRawVol > ADC_VOL_NORMAL + ADC_DIF_VOL_LIMIT) {
+		  SysState = VOL_ABOVE;
+	  } else if (adcRawCurr < ADC_CURR_NORMAL - ADC_DIF_CURR_LIMIT){
+		  SysState = CURR_BELOW;
+	  } else if(adcRawCurr > ADC_CURR_NORMAL + ADC_DIF_CURR_LIMIT) {
+		  SysState = CURR_ABOVE;
+	  } else {
+		  SysState = NORMAL;
 	  }
+
 	  osDelay(1000);
   }
   /* USER CODE END Check_Failures */
@@ -746,6 +817,7 @@ void Pos_Control(void *argument)
   {
 	adcRaw = readRawADC(hadc2);
 	actualPos_mm = getPos_mm(adcRaw);
+
 	error = setPoint - actualPos_mm;
 
 	if (error >= 0) {
@@ -764,9 +836,15 @@ void Pos_Control(void *argument)
 		pulseCount = COUNTS_PER_CONTROL * error;
 	}
 
-	setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
+	if (SysState == NORMAL) {
+		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, pulseCount);
+	} else {
+		setPWM(htim3, TIM_CHANNEL_1, PERIOD_COUNT, 0);
+	}
 
-    osDelay(20);
+	sendSerialData();
+
+    osDelay(200);
   }
   /* USER CODE END Pos_Control */
 }

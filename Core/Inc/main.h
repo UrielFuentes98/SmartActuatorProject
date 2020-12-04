@@ -70,6 +70,8 @@ void Error_Handler(void);
 #define ADC_Read_GPIO_Port GPIOA
 #define In2_Pin GPIO_PIN_4
 #define In2_GPIO_Port GPIOA
+#define ADC_Current_Pin GPIO_PIN_5
+#define ADC_Current_GPIO_Port GPIOA
 #define PWM_Mot_Pin GPIO_PIN_6
 #define PWM_Mot_GPIO_Port GPIOA
 #define LED2_Pin GPIO_PIN_0
